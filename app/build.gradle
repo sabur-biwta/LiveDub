@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.livedub.player'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.livedub.player'
+        minSdk 26
+        targetSdk 34
+        // Each GitHub build gets a higher number, so a new APK installs over the old one
+        versionCode (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+        versionName "1.0." + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
+    }
+
+    signingConfigs {
+        // A fixed key, so updates install over the previous version
+        livedub {
+            storeFile file('livedub.keystore')
+            storePassword 'livedub-key'
+            keyAlias 'livedub'
+            keyPassword 'livedub-key'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.livedub
+        }
+        debug {
+            signingConfig signingConfigs.livedub
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.11.0'
+}

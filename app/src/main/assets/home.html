@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Dub</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  body { padding: 0 16px 32px; }
+  header { display: flex; align-items: center; gap: 10px; padding: 18px 0 8px; }
+  header img { width: 36px; height: 36px; border-radius: 9px; }
+  header h1 { font-size: 20px; flex: 1; }
+  .big { width: 100%; padding: 13px; font-size: 16px; border-radius: 10px; margin-top: 10px; }
+  #link { font-size: 15px; padding: 12px; border-radius: 10px; }
+  .row2 { display: flex; gap: 8px; margin-top: 10px; }
+  .row2 button { flex: 1; padding: 11px; }
+  h2 { margin-top: 26px; }
+  .recent { display: flex; flex-direction: column; gap: 8px; }
+  .recent button { text-align: left; font-weight: 500; padding: 10px 12px; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
+  .tip { margin-top: 22px; }
+</style>
+</head>
+<body>
+  <header>
+    <img src="icon.png" alt="">
+    <h1>Live Dub</h1>
+    <button id="settings">Settings</button>
+  </header>
+
+  <label class="field"><span>YouTube link</span>
+    <input type="url" id="link" placeholder="Paste a YouTube link here" autocomplete="off">
+  </label>
+  <div class="row2">
+    <button id="paste">Paste</button>
+    <button id="clear">Clear</button>
+  </div>
+  <button id="play" class="primary big">Play with dubbing</button>
+  <div class="msg" id="msg"></div>
+
+  <h2>Recent</h2>
+  <div class="recent" id="recent"><span class="muted">Videos you play appear here.</span></div>
+
+  <p class="muted tip">Tip: in the YouTube app, tap Share on any video and choose Live Dub to open it here directly.</p>
+
+<script>
+(function () {
+  "use strict";
+  var N = window.LiveDubNative;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function videoId(s) {
+    var m = /(?:v=|youtu\.be\/|\/shorts\/|\/live\/|\/embed\/)([A-Za-z0-9_-]{11})/.exec(String(s || ""));
+    if (m) return m[1];
+    return /^[A-Za-z0-9_-]{11}$/.test(String(s || "").trim()) ? String(s).trim() : null;
+  }
+
+  function recent() {
+    try { return JSON.parse(N.storageGet("recentVideos") || "[]") || []; } catch (e) { return []; }
+  }
+
+  function showRecent() {
+    var list = recent();
+    if (!list.length) return;
+    var box = $("recent");
+    box.innerHTML = "";
+    list.forEach(function (r) {
+      var b = document.createElement("button");
+      b.textContent = r.title || ("Video " + r.id);
+      b.addEventListener("click", function () { open(r.id); });
+      box.appendChild(b);
+    });
+  }
+
+  function open(id) {
+    location.href = "https://www.youtube.com/watch?v=" + id;
+  }
+
+  function play() {
+    var id = videoId($("link").value);
+    if (!id) {
+      $("msg").textContent = "That does not look like a YouTube video link.";
+      $("msg").className = "msg error";
+      return;
+    }
+    open(id);
+  }
+
+  $("play").addEventListener("click", play);
+  $("link").addEventListener("keydown", function (e) { if (e.key === "Enter") play(); });
+  $("paste").addEventListener("click", function () { $("link").value = N.clipboardText() || ""; $("msg").textContent = ""; });
+  $("clear").addEventListener("click", function () { $("link").value = ""; $("link").focus(); });
+  $("settings").addEventListener("click", function () { N.openSettings(); });
+
+  // Prefill from the clipboard when it holds a YouTube link
+  var clip = N.clipboardText() || "";
+  if (videoId(clip) && /youtu/.test(clip)) {
+    $("link").value = clip;
+    $("msg").textContent = "Link taken from the clipboard.";
+    $("msg").className = "msg ok";
+  }
+  showRecent();
+})();
+</script>
+</body>
+</html>

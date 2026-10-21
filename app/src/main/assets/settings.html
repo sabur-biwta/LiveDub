@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Dub settings</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .provider { margin: 12px 0; }
+  .provider .head { display: flex; gap: 8px; align-items: center; }
+  .provider .head input { font-weight: 600; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .savebar { position: sticky; bottom: 0; padding: 12px 0; background: var(--bg); border-top: 1px solid var(--line);
+             display: flex; gap: 10px; align-items: center; margin-top: 24px; }
+  .add { display: flex; gap: 8px; }
+  .add select { max-width: 280px; }
+  .keyrow { display: flex; gap: 6px; }
+  .keyrow input { flex: 1; }
+</style>
+
+<style>
+  main { padding-top: 8px !important; }
+  .topbar { position: sticky; top: 0; background: var(--bg); padding: 8px 0; z-index: 5; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  /* Browser voices do not exist in the Android web view */
+  .card:has(#systemVoiceMale) { display: none; }
+  #ttsEngine option[value=system] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="topbar"><button id="back">&larr; Back</button></div>
+
+  <h1>Live Dub Settings</h1>
+  <p class="muted">Translation runs through Google Translate by default. Add any AI service below to use it instead.
+    API keys stay on this phone only and are sent only to the service they belong to.</p>
+
+  <h2>Playback</h2>
+  <div class="card">
+    <label class="field"><span>Translator</span><select id="q-providerId"></select></label>
+    <label class="field"><span>Voice</span>
+      <select id="q-ttsEngine">
+        <option value="android">Phone voice (free, offline, no limits)</option>
+        <option value="google">Google online voice (female; male = deepened)</option>
+        <option value="gemini">Gemini voice (needs Gemini key, small free limit)</option>
+      </select>
+    </label>
+    <label class="field"><span>Speaker voice</span>
+      <select id="q-voiceGender">
+        <option value="male">Always male voice</option>
+        <option value="female">Always female voice</option>
+        <option value="auto">Auto: match the speaker</option>
+      </select>
+    </label>
+    <div id="phoneVoices">
+      <div class="grid">
+        <label class="field"><span>Phone voice for male</span><select id="q-androidVoiceMale"></select></label>
+        <label class="field"><span>Phone voice for female</span><select id="q-androidVoiceFemale"></select></label>
+      </div>
+      <div class="actions">
+        <button id="q-testMale" type="button">Test male</button>
+        <button id="q-testFemale" type="button">Test female</button>
+        <button id="q-installVoice" type="button">Install Bangla voice</button>
+      </div>
+      <div class="msg" id="phoneTestMsg"></div>
+      <div class="msg" id="phoneNote"></div>
+    </div>
+    <label class="field"><span>Original video volume <span class="muted" id="q-originalVolumeVal"></span></span>
+      <input type="range" id="q-originalVolume" min="0" max="1" step="0.05"></label>
+    <label class="field"><span>Voice speed <span class="muted" id="q-voiceSpeedVal"></span></span>
+      <input type="range" id="q-voiceSpeed" min="0.8" max="1.6" step="0.05"></label>
+    <div class="field"><span>When the voice is longer than the scene</span>
+      <label class="row"><input type="radio" name="q-overrun" value="speed"> Speed up the voice</label>
+      <label class="row"><input type="radio" name="q-overrun" value="pause"> Pause the video until it finishes</label>
+    </div>
+    <label class="row field"><input type="checkbox" id="q-showSubs"> Show Bangla subtitles</label>
+    <p class="muted">Playback settings are saved immediately.</p>
+  </div>
+
+
+  <h2>AI translators</h2>
+  <div id="providers"></div>
+  <div class="add">
+    <select id="preset">
+      <option value="openai">ChatGPT (OpenAI)</option>
+      <option value="anthropic">Claude (Anthropic)</option>
+      <option value="gemini">Gemini (Google)</option>
+      <option value="deepseek">DeepSeek</option>
+      <option value="grok">Grok (xAI)</option>
+      <option value="openrouter">OpenRouter (many models, one key)</option>
+      <option value="groq">Groq</option>
+      <option value="ollama">Ollama (local, no key)</option>
+      <option value="custom">Other OpenAI-compatible service</option>
+    </select>
+    <button id="addProvider">Add translator</button>
+  </div>
+
+  <label class="field"><span>Extra instructions for AI translators (optional)</span>
+    <textarea id="extraPrompt" placeholder="Example: Use simple everyday words. Keep scientific terms in English."></textarea>
+  </label>
+
+  <h2>Language and voice</h2>
+  <div class="grid">
+    <label class="field"><span>Translate into</span>
+      <select id="targetLang">
+        <option value="bn">Bangla (bn)</option>
+        <option value="en">English (en)</option>
+        <option value="hi">Hindi (hi)</option>
+        <option value="ur">Urdu (ur)</option>
+        <option value="ar">Arabic (ar)</option>
+      </select>
+    </label>
+    <label class="field"><span>Voice volume</span>
+      <input type="range" id="voiceVolume" min="0.2" max="1" step="0.05">
+    </label>
+    <label class="field"><span>Maximum voice speed-up (fit mode)</span>
+      <select id="maxSpeed">
+        <option value="1.4">1.4x</option><option value="1.6">1.6x</option>
+        <option value="1.8">1.8x</option><option value="2">2.0x</option><option value="2.5">2.5x</option>
+      </select>
+    </label>
+    <label class="field"><span>Subtitle text size</span>
+      <select id="subSize">
+        <option value="18">Small</option><option value="22">Medium</option>
+        <option value="28">Large</option><option value="34">Extra large</option>
+      </select>
+    </label>
+  </div>
+
+  <h2>Male and female voices</h2>
+  <p class="muted">With "Auto" the extension listens to the speaker for about half a second at the start of each
+    sentence, measures the voice pitch, and answers in a male or female voice to match.</p>
+  <div class="card">
+    <strong>Gemini voice</strong>
+    <p class="muted">Uses the API key of your Gemini translator above. A free key from Google AI Studio works,
+      within Google's free daily limits; when a limit is reached the Google voice is used for a while.</p>
+    <div class="grid">
+      <label class="field"><span>Male voice</span><select id="geminiVoiceMale"></select></label>
+      <label class="field"><span>Female voice</span><select id="geminiVoiceFemale"></select></label>
+      <label class="field"><span>Voice model</span>
+        <input type="text" id="geminiTtsModel" list="ttsModels">
+        <datalist id="ttsModels">
+          <option value="gemini-3.1-flash-tts-preview"></option>
+          <option value="gemini-3.8-flash-tts"></option>
+          <option value="gemini-3.8-flash-lite-tts"></option>
+          <option value="gemini-2.5-flash-preview-tts"></option>
+        </datalist>
+      </label>
+      <div class="field"><span>&nbsp;</span>
+        <div class="actions">
+          <button id="testMale" type="button">Test male</button>
+          <button id="testFemale" type="button">Test female</button>
+        </div>
+      </div>
+    </div>
+    <div class="msg" id="geminiMsg"></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <strong>Browser / Edge voice</strong>
+    <p class="muted">Microsoft Edge has natural Bangla voices (Pradeep - male, Nabanita - female). They are picked
+      automatically; change them here if needed. Chrome usually has no Bangla voice.</p>
+    <div class="grid">
+      <label class="field"><span>Male voice</span><select id="systemVoiceMale"></select></label>
+      <label class="field"><span>Female voice</span><select id="systemVoiceFemale"></select></label>
+    </div>
+  </div>
+  <label class="field"><span>Male voice from the Google voice (free)</span>
+    <select id="maleDepth">
+      <option value="0.8">Light deepening</option>
+      <option value="0.72">Medium (recommended)</option>
+      <option value="0.65">Deep</option>
+    </select>
+  </label>
+  <label class="field"><span>Listening time before speaking (Auto mode)</span>
+    <select id="listenDelay">
+      <option value="0.3">0.3 s (faster, less accurate)</option>
+      <option value="0.45">0.45 s (recommended)</option>
+      <option value="0.7">0.7 s (more accurate)</option>
+    </select>
+  </label>
+
+  <h2>Behaviour</h2>
+  <label class="row field"><input type="checkbox" id="keepOnNext"> Keep dubbing when moving to the next video in the same tab</label>
+  <label class="row field"><input type="checkbox" id="autoStart"> Start dubbing automatically on every video</label>
+  <label class="row field"><input type="checkbox" id="hideOriginal"> Hide YouTube's own captions while dubbing</label>
+
+  <h2>Saved translations</h2>
+  <p class="muted">Finished AI translations are kept (last 80 videos) so watching again costs nothing.</p>
+  <button id="clearCache">Delete saved translations</button> <span class="msg" id="cacheMsg"></span>
+
+  <div class="savebar">
+    <button class="primary" id="save">Save settings</button>
+    <span class="msg" id="saveMsg"></span>
+  </div>
+</main>
+
+<template id="providerTpl">
+  <div class="card provider">
+    <div class="head">
+      <input type="text" class="p-name" placeholder="Name">
+      <button class="danger p-remove" title="Remove">Remove</button>
+    </div>
+    <div class="grid">
+      <label class="field"><span>Type</span>
+        <select class="p-type">
+          <option value="openai">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="gemini">Google Gemini</option>
+        </select>
+      </label>
+      <label class="field"><span>Server address</span>
+        <input type="url" class="p-base" placeholder="https://...">
+      </label>
+      <label class="field"><span>API key</span>
+        <div class="keyrow">
+          <input type="password" class="p-key" autocomplete="off" placeholder="Paste key here">
+          <button class="p-show" type="button">Show</button>
+        </div>
+      </label>
+      <label class="field"><span>Model</span>
+        <input type="text" class="p-model" placeholder="Click 'Load models' or type a model name">
+        <datalist></datalist>
+      </label>
+    </div>
+    <div class="actions">
+      <button class="p-models" type="button">Load models</button>
+      <button class="p-test" type="button">Test translation</button>
+    </div>
+    <div class="msg p-msg"></div>
+  </div>
+</template>
+
+<script src="ld-settings.js"></script>
+</body>
+</html>
