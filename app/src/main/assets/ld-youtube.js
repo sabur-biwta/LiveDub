@@ -95,17 +95,46 @@
     };
   }
 
+  const baseLang = (c) => String(c || "").toLowerCase().split(/[-_]/)[0];
+
+  /** Captions the player already downloaded for this video: exact track first, then same language, then any. */
+  function findCaptured(videoId, track) {
+    const exact = captured.get(`${videoId}|${track.languageCode}|${track.kind}`);
+    if (exact) return exact;
+    let sameLang = null, any = null;
+    captured.forEach((body, k) => {
+      const [v, lang] = k.split("|");
+      if (v !== videoId) return;
+      if (!sameLang && baseLang(lang) === baseLang(track.languageCode)) sameLang = body;
+      if (!any) any = body;
+    });
+    return sameLang || any;
+  }
+
+  async function waitCaptured(videoId, track, ms) {
+    for (let t = 0; t < ms; t += 200) {
+      const b = findCaptured(videoId, track);
+      if (b) return b;
+      await sleep(200);
+    }
+    return null;
+  }
+
   async function fetchTrack(track, videoId) {
-    const key = `${videoId}|${track.languageCode}|${track.kind}`;
-    if (captured.has(key)) return captured.get(key);
+    let body = findCaptured(videoId, track);
+    if (body) return body;
 
     // 1. Direct download
     try {
       const sep = track.baseUrl.indexOf("?") >= 0 ? "&" : "?";
       const r = await origFetch(track.baseUrl + sep + "fmt=json3", { credentials: "include" });
       const t = r.ok ? await r.text() : "";
-      if (t && t.length > 50) { captured.set(key, t); return t; }
+      if (t && t.length > 50) { captured.set(`${videoId}|${track.languageCode}|${track.kind}`, t); return t; }
     } catch (e) { /* fall through */ }
+
+    // The player may be downloading captions right now (captions switched on)
+    body = await waitCaptured(videoId, track, 1500);
+    if (body) return body;
 
     // 2. Ask the player to load this caption track and capture its download
     const p = player();
@@ -120,17 +149,15 @@
       if (!list.length) await sleep(250);
     }
     const wantAsr = track.kind === "asr";
+    const same = (x) => baseLang(x.languageCode) === baseLang(track.languageCode);
     const entry = list.find((x) => x.languageCode === track.languageCode && ((x.kind === "asr") === wantAsr))
-      || list.find((x) => x.languageCode === track.languageCode);
-    if (!entry) throw new Error("Caption track not available in the player");
+      || list.find((x) => x.languageCode === track.languageCode)
+      || list.find(same)
+      || list[0]
+      || { languageCode: track.languageCode };      // last resort: ask for the language directly
     try { p.setOption("captions", "track", entry); } catch (e) { /* ignore */ }
 
-    let body = null;
-    for (let i = 0; i < 60 && !body; i++) {
-      await sleep(200);
-      body = captured.get(key) || captured.get(`${videoId}|${track.languageCode}|`) ||
-             captured.get(`${videoId}|${track.languageCode}|asr`) || null;
-    }
+    body = await waitCaptured(videoId, track, 12000);
 
     // restore the viewer's caption state (hide captions if they were off)
     try {
@@ -138,7 +165,7 @@
       else p.setOption("captions", "track", before);
     } catch (e) { /* ignore */ }
 
-    if (!body) throw new Error("Could not download captions for this video");
+    if (!body) throw new Error("Could not get the captions of this video from YouTube");
     return body;
   }
 
