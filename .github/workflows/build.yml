@@ -1,0 +1,42 @@
+name: Build Live Dub APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Collect APK
+        run: cp app/build/outputs/apk/release/app-release.apk LiveDub.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiveDub-apk
+          path: LiveDub.apk
+
+      - name: Publish download link (release "latest")
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest LiveDub.apk --title "Live Dub (latest build)" --notes "Build ${GITHUB_RUN_NUMBER} from ${GITHUB_SHA}"
