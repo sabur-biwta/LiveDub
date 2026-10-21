@@ -11,8 +11,8 @@ android {
         minSdk 26
         targetSdk 34
         // Each GitHub build gets a higher number, so a new APK installs over the old one
-        versionCode (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
-        versionName "1.0." + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
+        versionCode = Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+        versionName = '1.0.' + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
     }
 
     signingConfigs {
