@@ -185,39 +185,61 @@ public class NativeBridge {
     /** Speaks text into a WAV file and answers window.__ldNative.ttsDone(id, status, base64Wav, error). */
     @JavascriptInterface
     public void tts(final String id, final String text, final String voiceName, final String langTag) {
-        ui.post(() -> {
-            if (!ttsReady) {
+        ui.post(() -> speak(id, text, voiceName, langTag, 0));
+    }
+
+    /**
+     * Selects the requested voice, then synthesizes. Right after the speech engine starts, a voice
+     * switch can be refused while the voice is still loading; then we wait and retry instead of
+     * silently speaking with the default voice (which may be the other gender).
+     */
+    private void speak(final String id, final String text, final String voiceName, final String langTag, final int attempt) {
+        if (!ttsReady) {
+            if (attempt < 20) {
+                ui.postDelayed(() -> speak(id, text, voiceName, langTag, attempt + 1), 250);
+            } else {
                 deliver("ttsDone", id, 0, "", "The phone's speech engine is not ready");
-                return;
             }
-            try {
-                Voice chosen = null;
-                if (voiceName != null && !voiceName.isEmpty() && tts.getVoices() != null) {
-                    for (Voice v : tts.getVoices()) {
-                        if (v.getName().equals(voiceName)) {
-                            chosen = v;
-                            break;
-                        }
+            return;
+        }
+        try {
+            Voice chosen = null;
+            Set<Voice> all = tts.getVoices();
+            if (voiceName != null && !voiceName.isEmpty() && all != null) {
+                for (Voice v : all) {
+                    if (v.getName().equals(voiceName)) {
+                        chosen = v;
+                        break;
                     }
                 }
-                if (chosen != null) {
-                    tts.setVoice(chosen);
-                } else {
-                    tts.setLanguage(Locale.forLanguageTag(langTag == null || langTag.isEmpty() ? "bn-BD" : langTag));
-                }
-                String safe = id.replaceAll("[^A-Za-z0-9_-]", "");
-                File file = new File(activity.getCacheDir(), "tts-" + safe + ".wav");
-                String utterance = "u" + safe;
-                pendingSpeech.put(utterance, id + "|" + file.getAbsolutePath());
-                int r = tts.synthesizeToFile(text, new Bundle(), file, utterance);
-                if (r != TextToSpeech.SUCCESS) {
-                    pendingSpeech.remove(utterance);
-                    deliver("ttsDone", id, 0, "", "The speech engine refused the text");
-                }
-            } catch (Exception e) {
-                deliver("ttsDone", id, 0, "", String.valueOf(e.getMessage()));
             }
-        });
+            int selected;
+            if (chosen != null) {
+                selected = tts.setVoice(chosen);
+            } else {
+                selected = tts.setLanguage(Locale.forLanguageTag(langTag == null || langTag.isEmpty() ? "bn-BD" : langTag));
+                if (selected >= TextToSpeech.LANG_AVAILABLE) selected = TextToSpeech.SUCCESS;
+            }
+            if (selected != TextToSpeech.SUCCESS) {
+                if (attempt < 20) {
+                    ui.postDelayed(() -> speak(id, text, voiceName, langTag, attempt + 1), 300);
+                } else {
+                    deliver("ttsDone", id, 0, "", "The chosen voice could not be loaded: " + voiceName);
+                }
+                return;
+            }
+            String safe = id.replaceAll("[^A-Za-z0-9_-]", "");
+            File file = new File(activity.getCacheDir(), "tts-" + safe + ".wav");
+            String utterance = "u" + safe;
+            pendingSpeech.put(utterance, id + "|" + file.getAbsolutePath());
+            int r = tts.synthesizeToFile(text, new Bundle(), file, utterance);
+            if (r != TextToSpeech.SUCCESS) {
+                pendingSpeech.remove(utterance);
+                deliver("ttsDone", id, 0, "", "The speech engine refused the text");
+            }
+        } catch (Exception e) {
+            deliver("ttsDone", id, 0, "", String.valueOf(e.getMessage()));
+        }
     }
 
     private void finishSpeech(String utterance, final String error) {
