@@ -18,6 +18,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
+import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -70,6 +71,10 @@ public class MainActivity extends Activity {
         s.setUseWideViewPort(false);
         s.setLoadWithOverviewMode(false);
         s.setUserAgentString(DESKTOP_UA);
+        // Do not announce the app as an embedded browser (Google refuses sign-in from those)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+            WebSettingsCompat.setRequestedWithHeaderOriginAllowList(s, Collections.<String>emptySet());
+        }
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
@@ -179,6 +184,11 @@ public class MainActivity extends Activity {
 
     void openSettings() {
         web.loadUrl(SETTINGS);
+    }
+
+    void openSignIn() {
+        web.loadUrl("https://accounts.google.com/ServiceLogin?service=youtube&continue="
+                + Uri.encode(YOUTUBE_ORIGIN + "/"));
     }
 
     // ------------------------------------------------------------------ fullscreen video

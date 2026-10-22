@@ -49,6 +49,7 @@ public class NativeBridge {
     private final Map<String, String> pendingSpeech = new ConcurrentHashMap<>();
     private final TextToSpeech tts;
     private volatile boolean ttsReady = false;
+    private String currentVoice = "";   // voice the engine was last switched to
 
     NativeBridge(MainActivity activity, WebView web) {
         this.activity = activity;
@@ -214,9 +215,19 @@ public class NativeBridge {
                 }
             }
             int selected;
-            if (chosen != null) {
+            if (chosen != null && !chosen.getName().equals(currentVoice)) {
+                // Switch voice, then give the engine time to load it before the first sentence,
+                // so that sentence is not spoken with the previous (or default) voice.
                 selected = tts.setVoice(chosen);
+                if (selected == TextToSpeech.SUCCESS) {
+                    currentVoice = chosen.getName();
+                    ui.postDelayed(() -> speak(id, text, voiceName, langTag, attempt + 1), 700);
+                    return;
+                }
+            } else if (chosen != null) {
+                selected = TextToSpeech.SUCCESS;
             } else {
+                currentVoice = "";
                 selected = tts.setLanguage(Locale.forLanguageTag(langTag == null || langTag.isEmpty() ? "bn-BD" : langTag));
                 if (selected >= TextToSpeech.LANG_AVAILABLE) selected = TextToSpeech.SUCCESS;
             }
@@ -306,6 +317,11 @@ public class NativeBridge {
     @JavascriptInterface
     public void openSettings() {
         ui.post(activity::openSettings);
+    }
+
+    @JavascriptInterface
+    public void openSignIn() {
+        ui.post(activity::openSignIn);
     }
 
     // ------------------------------------------------------------------ helpers
