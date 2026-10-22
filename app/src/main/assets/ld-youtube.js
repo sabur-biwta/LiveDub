@@ -958,6 +958,7 @@ var chrome = {
     autoStart: false,
     keepOnNext: true,
     extraPrompt: "",
+    debug: false,             // show the diagnostics panel on the video
     providers: [],            // [{id, name, type: "openai"|"anthropic"|"gemini", baseUrl, apiKey, model}]
   };
 
@@ -992,6 +993,7 @@ Object.assign(window.LiveDub.DEFAULTS, {
   autoStart: true,             // dub as soon as a video opens in the app
   keepOnNext: true,
   originalVolume: 0.1,
+  debug: true,                 // diagnostics panel on while the app is being tested
 });
 
 __ldBgLoading = true;
@@ -1427,6 +1429,42 @@ window.__ldContentCss = ".livedub-btn { opacity: 0.9; }\n.livedub-btn svg { padd
     return p || { id: "google", type: "google", name: "Google Translate" };
   }
 
+  // ------------------------------------------------------------ diagnostics
+
+  const diagLog = [];
+  function dlog(msg) {
+    const v = video();
+    diagLog.push((v ? v.currentTime.toFixed(1) : "-") + "s " + msg);
+    if (diagLog.length > 8) diagLog.shift();
+  }
+  const logged = new Set();
+  function dlogOnce(msg) { if (!logged.has(msg)) { logged.add(msg); dlog(msg); } }
+  const segNo = (seg) => (seg ? S.segs.indexOf(seg) : -1);
+
+  let diagEl = null;
+  function showDiag() {
+    if (!S.settings.debug) { if (diagEl) diagEl.style.display = "none"; return; }
+    if (!diagEl || !diagEl.isConnected) {
+      diagEl = document.createElement("div");
+      diagEl.style.cssText = "position:fixed;left:4px;right:4px;top:48px;z-index:100000;pointer-events:none;" +
+        "background:rgba(0,0,0,.78);color:#9ef;font:11px/1.35 monospace;padding:4px 6px;border-radius:6px;white-space:pre-wrap";
+      document.body.appendChild(diagEl);
+    }
+    const v = video();
+    const i = v ? LD.findSegmentIndex(S.segs, v.currentTime) : -1;
+    const seg = S.segs[i];
+    const key = seg ? variantKey(seg.gender || predictedGender()) : "";
+    const vr = seg && seg.v && seg.v[key];
+    const line = "DIAG t=" + (v ? v.currentTime.toFixed(1) : "?") + (v && v.paused ? " (paused)" : "") +
+      " seg=" + i + "/" + S.segs.length + " tr=" + (seg ? (seg.tr ? "yes" : seg.tr === "" ? "EMPTY" : "wait") : "-") +
+      " clip=" + (vr ? (vr.url ? "ready" : vr.loading ? "making" : "err" + (vr.errors || 0)) : "none") +
+      " voice=" + (voiceProxy.isPlaying() ? "ON" : "off") + " ad=" + (isAd() ? "YES" : "no") +
+      " eng=" + effectiveEngine() + "/" + (seg && seg.gender || predictedGender()) + " mode=" + S.settings.overrun +
+      (sync.pausedByDub ? " heldBy=" + sync.pauseReason : "");
+    diagEl.style.display = "block";
+    diagEl.textContent = line + "\n" + diagLog.join("\n");
+  }
+
   // ------------------------------------------------------------ voices
 
   class AudioVoice {
@@ -1434,8 +1472,13 @@ window.__ldContentCss = ".livedub-btn { opacity: 0.9; }\n.livedub-btn svg { padd
       this.a = new Audio();
       this.a.preservesPitch = true;
       this.resolve = null;
-      this.a.addEventListener("ended", () => this.done());
-      this.a.addEventListener("error", () => this.done());
+      this.a.addEventListener("ended", () => { dlog("voice ended"); this.done(); });
+      this.a.addEventListener("error", () => {
+        const e = this.a.error;
+        dlog("voice ERROR code " + (e ? e.code + " " + (e.message || "") : "?"));
+        this.done();
+      });
+      this.a.addEventListener("pause", () => { if (this.resolve && !this.ourPause) dlog("voice PAUSED by the system"); });
     }
     done() { const r = this.resolve; this.resolve = null; if (r) r(); }
     play(seg, rate) {
@@ -1443,13 +1486,17 @@ window.__ldContentCss = ".livedub-btn { opacity: 0.9; }\n.livedub-btn svg { padd
       this.a.src = seg.audioUrl;
       this.a.playbackRate = rate;
       this.a.volume = clamp01(S.settings.voiceVolume);
+      dlog("play seg " + segNo(seg) + " rate " + rate.toFixed(2) + " len " + (seg.audioDur || 0).toFixed(1) + "s");
       return new Promise((res) => {
         this.resolve = res;
-        this.a.play().catch(() => this.done());
+        this.a.play().then(() => dlog("voice playing"), (e) => {
+          dlog("play REFUSED: " + (e && e.name) + " " + (e && e.message ? e.message.slice(0, 80) : ""));
+          this.done();
+        });
       });
     }
-    stop() { try { this.a.pause(); } catch (e) { /* ignore */ } this.done(); }
-    pause() { if (this.resolve) this.a.pause(); }
+    stop() { this.ourPause = true; try { this.a.pause(); } catch (e) { /* ignore */ } this.ourPause = false; this.done(); }
+    pause() { if (this.resolve) { this.ourPause = true; this.a.pause(); this.ourPause = false; } }
     resume() { if (this.resolve && this.a.paused) this.a.play().catch(() => {}); }
     isPlaying() { return !!this.resolve; }
     remaining() {
@@ -1601,7 +1648,7 @@ window.__ldContentCss = ".livedub-btn { opacity: 0.9; }\n.livedub-btn svg { padd
 
   async function loadAudio(s, v, gender, run) {
     const st = S.settings;
-    if (!LD.isInTargetScript(s.tr, st.targetLang)) { s.skip = true; return; }   // never voice a wrong-language line
+    if (!LD.isInTargetScript(s.tr, st.targetLang)) { s.skip = true; dlog("seg " + segNo(s) + " skipped: not Bangla"); return; }   // never voice a wrong-language line
     try {
       let r = null;
       if (effectiveEngine() === "gemini") {
@@ -1648,7 +1695,9 @@ window.__ldContentCss = ".livedub-btn { opacity: 0.9; }\n.livedub-btn svg { padd
       v.url = url;
       v.dur = dur;
       S.voiceFailures = 0;
+      dlog("clip seg " + segNo(s) + " ready " + dur.toFixed(1) + "s " + mime);
     } catch (e) {
+      dlog("clip seg " + segNo(s) + " FAILED: " + String(e && e.message).slice(0, 90));
       v.errors = (v.errors || 0) + 1;
       v.retryAt = Date.now() + 1500 * v.errors;
       if (v.errors >= 4) s.skip = true;
@@ -1807,10 +1856,12 @@ window.__ldContentCss = ".livedub-btn { opacity: 0.9; }\n.livedub-btn svg { padd
   }
 
   setInterval(() => {
-    bindVideo();
-    ensureButton();
-    if (!S.enabled || !S.segs.length) { showSub(""); return; }
+    // Each step guarded: a problem with the player button must never stop the voice.
+    try { bindVideo(); } catch (e) { dlogOnce("bindVideo: " + e.message); }
+    try { ensureButton(); } catch (e) { dlogOnce("button: " + e.message); }
+    if (!S.enabled || !S.segs.length) { showSub(""); if (S.enabled) showDiag(); return; }
     const i = sync.tick();
+    showDiag();
     const v = video();
     if (S.settings.showSubs && i >= 0 && v && v.currentTime <= S.segs[i].end + 0.4 && !isAd()) {
       showSub(S.segs[i].tr || "");
@@ -2148,12 +2199,30 @@ window.__ldContentCss = ".livedub-btn { opacity: 0.9; }\n.livedub-btn svg { padd
     updateButton();
   }
 
-  const ICON =
-    '<svg viewBox="0 0 36 36" width="100%" height="100%" aria-hidden="true">' +
-    '<path d="M9 11h13a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-7l-4 3v-3h-2a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3z" ' +
-    'fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>' +
-    '<path d="M28 13.5c1.3 1.2 2 2.8 2 4.5s-.7 3.3-2 4.5M13 17h7M13 20h4" fill="none" stroke="currentColor" ' +
-    'stroke-width="2" stroke-linecap="round"/></svg>';
+  /** Player button icon, built with DOM calls (YouTube's Trusted Types rule forbids raw HTML strings). */
+  function makeIcon() {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 36 36");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.setAttribute("aria-hidden", "true");
+    const paths = [
+      ["M9 11h13a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-7l-4 3v-3h-2a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3z", "round", null],
+      ["M28 13.5c1.3 1.2 2 2.8 2 4.5s-.7 3.3-2 4.5M13 17h7M13 20h4", null, "round"],
+    ];
+    for (const [d, join, cap] of paths) {
+      const p = document.createElementNS(NS, "path");
+      p.setAttribute("d", d);
+      p.setAttribute("fill", "none");
+      p.setAttribute("stroke", "currentColor");
+      p.setAttribute("stroke-width", "2");
+      if (join) p.setAttribute("stroke-linejoin", join);
+      if (cap) p.setAttribute("stroke-linecap", cap);
+      svg.appendChild(p);
+    }
+    return svg;
+  }
 
   let btn = null;
   function ensureButton() {
@@ -2162,7 +2231,7 @@ window.__ldContentCss = ".livedub-btn { opacity: 0.9; }\n.livedub-btn svg { padd
     if (btn && btn.parentNode === bar) return;
     btn = document.createElement("button");
     btn.className = "ytp-button livedub-btn";
-    btn.innerHTML = ICON;
+    btn.appendChild(makeIcon());
     btn.addEventListener("click", (e) => { e.stopPropagation(); S.enabled ? stopDub() : startDub(); });
     bar.insertBefore(btn, bar.firstChild);
     updateButton();

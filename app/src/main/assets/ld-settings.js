@@ -765,6 +765,7 @@ var speechSynthesis = window.speechSynthesis || { getVoices: function () { retur
     autoStart: false,
     keepOnNext: true,
     extraPrompt: "",
+    debug: false,             // show the diagnostics panel on the video
     providers: [],            // [{id, name, type: "openai"|"anthropic"|"gemini", baseUrl, apiKey, model}]
   };
 
@@ -799,6 +800,7 @@ Object.assign(window.LiveDub.DEFAULTS, {
   autoStart: true,             // dub as soon as a video opens in the app
   keepOnNext: true,
   originalVolume: 0.1,
+  debug: true,                 // diagnostics panel on while the app is being tested
 });
 
 __ldBgLoading = true;
@@ -1286,7 +1288,7 @@ __ldBgLoading = false;
   $("voiceVolume").value = settings.voiceVolume;
   $("maxSpeed").value = String(settings.maxSpeed);
   $("subSize").value = String(settings.subSize);
-  for (const k of ["keepOnNext", "autoStart", "hideOriginal"]) $(k).checked = !!settings[k];
+  for (const k of ["keepOnNext", "autoStart", "hideOriginal", "debug"]) $(k).checked = !!settings[k];
 
   // ---- voices
   const gm = $("geminiVoiceMale"), gf = $("geminiVoiceFemale");
@@ -1350,6 +1352,7 @@ __ldBgLoading = false;
       keepOnNext: $("keepOnNext").checked,
       autoStart: $("autoStart").checked,
       hideOriginal: $("hideOriginal").checked,
+      debug: $("debug").checked,
       geminiVoiceMale: gm.value,
       geminiVoiceFemale: gf.value,
       geminiTtsModel: $("geminiTtsModel").value.trim() || LD.DEFAULTS.geminiTtsModel,
